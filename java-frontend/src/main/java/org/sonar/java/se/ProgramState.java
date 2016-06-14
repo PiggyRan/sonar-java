@@ -22,6 +22,7 @@ package org.sonar.java.se;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+
 import org.sonar.java.collections.AVLTree;
 import org.sonar.java.collections.PMap;
 import org.sonar.java.se.constraint.BooleanConstraint;
@@ -179,10 +180,20 @@ public class ProgramState {
 
   public ProgramState addConstraint(SymbolicValue symbolicValue, Constraint constraint) {
     PMap<SymbolicValue, Constraint> newConstraints = constraints.put(symbolicValue, constraint);
-    if (newConstraints != constraints) {
+    if (newConstraints != constraints && !isSymbolicValueOfVolatileField(symbolicValue)) {
       return new ProgramState(this, newConstraints);
     }
     return this;
+  }
+
+  private boolean isSymbolicValueOfVolatileField(SymbolicValue symbolicValue) {
+    Set<Symbol> volatileFields = new HashSet<>();
+    values.forEach((symbol, sv) -> {
+      if (sv.equals(symbolicValue) && isField(symbol) && symbol.isVolatile()) {
+        volatileFields.add(symbol);
+      }
+    });
+    return !volatileFields.isEmpty();
   }
 
   ProgramState put(Symbol symbol, SymbolicValue value) {
@@ -278,14 +289,11 @@ public class ProgramState {
 
   public ProgramState resetFieldValues(ConstraintManager constraintManager) {
     final List<VariableTree> variableTrees = new ArrayList<>();
-    values.forEach(new PMap.Consumer<Symbol, SymbolicValue>() {
-      @Override
-      public void accept(Symbol symbol, SymbolicValue value) {
-        if (isField(symbol)) {
-          VariableTree variable = ((Symbol.VariableSymbol) symbol).declaration();
-          if (variable != null) {
-            variableTrees.add(variable);
-          }
+    values.forEach((symbol, symbolicValue) -> {
+      if (isField(symbol)) {
+        VariableTree variable = ((Symbol.VariableSymbol) symbol).declaration();
+        if (variable != null) {
+          variableTrees.add(variable);
         }
       }
     });
@@ -340,14 +348,11 @@ public class ProgramState {
 
   public Map<SymbolicValue, ObjectConstraint> getValuesWithConstraints(final Object state) {
     final Map<SymbolicValue, ObjectConstraint> result = new HashMap<>();
-    constraints.forEach(new PMap.Consumer<SymbolicValue, Constraint>() {
-      @Override
-      public void accept(SymbolicValue value, Constraint valueConstraint) {
-        if (valueConstraint instanceof ObjectConstraint) {
-          ObjectConstraint constraint = (ObjectConstraint) valueConstraint;
-          if (constraint.hasStatus(state)) {
-            result.put(value, constraint);
-          }
+    constraints.forEach((symbolicValue, valueConstraint) -> {
+      if (valueConstraint instanceof ObjectConstraint) {
+        ObjectConstraint constraint = (ObjectConstraint) valueConstraint;
+        if (constraint.hasStatus(state)) {
+          result.put(symbolicValue, constraint);
         }
       }
     });
@@ -357,14 +362,11 @@ public class ProgramState {
   public List<ObjectConstraint> getFieldConstraints(final Object state) {
     final Set<SymbolicValue> valuesAssignedToFields = getFieldValues();
     final List<ObjectConstraint> result = new ArrayList<>();
-    constraints.forEach(new PMap.Consumer<SymbolicValue, Constraint>() {
-      @Override
-      public void accept(SymbolicValue value, Constraint valueConstraint) {
-        if (valueConstraint instanceof ObjectConstraint && !valuesAssignedToFields.contains(value)) {
-          ObjectConstraint constraint = (ObjectConstraint) valueConstraint;
-          if (constraint.hasStatus(state)) {
-            result.add(constraint);
-          }
+    constraints.forEach((symbolicValue, valueConstraint) -> {
+      if (valueConstraint instanceof ObjectConstraint && !valuesAssignedToFields.contains(symbolicValue)) {
+        ObjectConstraint constraint = (ObjectConstraint) valueConstraint;
+        if (constraint.hasStatus(state)) {
+          result.add(constraint);
         }
       }
     });
@@ -373,12 +375,9 @@ public class ProgramState {
 
   public Set<SymbolicValue> getFieldValues() {
     final Set<SymbolicValue> fieldValues = new HashSet<>();
-    values.forEach(new PMap.Consumer<Symbol, SymbolicValue>() {
-      @Override
-      public void accept(Symbol key, SymbolicValue value) {
-        if (isField(key)) {
-          fieldValues.add(value);
-        }
+    values.forEach((symbol, symbolicValue) -> {
+      if (isField(symbol)) {
+        fieldValues.add(symbolicValue);
       }
     });
     return fieldValues;
@@ -386,16 +385,13 @@ public class ProgramState {
 
   public List<BinaryRelation> getKnownRelations() {
     final List<BinaryRelation> knownRelations = new ArrayList<>();
-    constraints.forEach(new PMap.Consumer<SymbolicValue, Constraint>() {
-      @Override
-      public void accept(SymbolicValue value, Constraint constraint) {
-        BinaryRelation relation = value.binaryRelation();
-        if (relation != null) {
-          if (BooleanConstraint.TRUE.equals(constraint)) {
-            knownRelations.add(relation);
-          } else if (BooleanConstraint.FALSE.equals(constraint)) {
-            knownRelations.add(relation.inverse());
-          }
+    constraints.forEach((symbolicValue, constraint) -> {
+      BinaryRelation relation = symbolicValue.binaryRelation();
+      if (relation != null) {
+        if (BooleanConstraint.TRUE.equals(constraint)) {
+          knownRelations.add(relation);
+        } else if (BooleanConstraint.FALSE.equals(constraint)) {
+          knownRelations.add(relation.inverse());
         }
       }
     });

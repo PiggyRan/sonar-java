@@ -1671,3 +1671,18 @@ class UtilObjects {
     }
   }
 }
+
+class VolatileFields {
+  private volatile boolean volatileField = false;
+
+  void foo() {
+    if (volatileField) {
+      return;
+    }
+    while (true) {
+      if (volatileField) { // Compliant as this field is volatile, it can be modified by another thread
+        System.out.println();
+      }
+    }
+  }
+}
